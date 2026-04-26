@@ -39,7 +39,7 @@ export default function Header() {
             <Search size={16} className="text-slate-400" />
             <input
               className="w-full bg-transparent outline-none text-sm placeholder:text-slate-500"
-              placeholder={isAdmin ? "Search users / submissions…" : "Search disabled (admin only)"}
+              placeholder={isAdmin ? "Search users / submissions…" : ""}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               disabled={!isAdmin}

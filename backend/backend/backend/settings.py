@@ -141,6 +141,16 @@ CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "1") == "1"
 CORS_ALLOWED_ORIGINS = [
     o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
 ]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r for r in os.environ.get("CORS_ALLOWED_ORIGIN_REGEXES", "").split(",") if r.strip()
+]
+
+# Optional (recommended for production)
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
+]
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
