@@ -1,8 +1,56 @@
 # Playto KYC (Django + React) — Deployable
 
-Hindi/English: yeh repo Playto KYC challenge ke core parts (state machine, file validation, review queue, SLA, auth) + bonus UI (futuristic sidebar/header, live search, notifications, graphs, toast) implement karta hai.
+Hindi/English: Yeh repo Playto Founding Engineering Intern Challenge 2026 ke liye ek working KYC onboarding pipeline ship karta hai. Focus **correctness + edge cases** pe hai: strict state machine, secure file uploads, reviewer queue, SLA flagging, role-based auth, aur notification logging. UI modern/futuristic (sidebar + header + live search + toast + graphs) hai, but core logic backend pe enforce hota hai.
 
-## Backend (Django/DRF)
+## What’s inside (features)
+
+- **Merchant**
+  - Unified **Login/Register**
+  - KYC form (save progress in draft / more-info)
+  - Document upload (PAN/Aadhaar/Bank Statement) with server-side validation
+  - Submit → reviewer queue
+  - SLA view for active submission + last approved/rejected summary
+  - “Start new KYC” after approved/rejected
+- **Reviewer/Admin**
+  - Queue (oldest-first) + SLA “at risk” flag
+  - Submission detail page: view form + open docs + approve/reject/hold/request-info
+  - Dashboard graphs (stats endpoint)
+  - User management + Add User page
+- **System**
+  - Notification events stored in DB on state changes (no email sending needed)
+  - JWT auth (Bearer) + role-based permissions
+
+## Tech stack
+
+- **Backend**: Django 6 + DRF + SimpleJWT + CORS headers (SQLite for simplicity)
+- **Frontend**: React (Vite) + Tailwind + Chart.js + react-hot-toast
+
+## Repo structure (high level)
+
+```text
+backend/
+  requirements.txt
+  backend/
+    manage.py
+    seed.py
+    backend/          # Django project
+    kyc/              # main app (models/serializers/views/state machine)
+frontend/
+  netlify.toml
+  .env.example
+  src/
+    api/client.js
+    context/AuthContext.jsx
+    components/...
+    pages/...
+EXPLAINER.md
+render.yaml
+netlify.toml
+```
+
+## Quickstart (Local)
+
+### Backend (Django/DRF)
 
 ```bash
 cd backend/backend
@@ -12,9 +60,10 @@ python3 manage.py shell < seed.py
 python3 manage.py runserver 8000
 ```
 
-API base: `http://127.0.0.1:8000/api/v1/`
+- **API base**: `http://127.0.0.1:8000/api/v1/`
+- **Media**: documents served in debug at `http://127.0.0.1:8000/media/...`
 
-## Frontend (React/Vite)
+### Frontend (React/Vite)
 
 ```bash
 cd frontend
@@ -23,30 +72,122 @@ npm install
 npm run dev
 ```
 
-Frontend: `http://127.0.0.1:5173`
+- **Frontend**: `http://127.0.0.1:5173`
 
-## Core API Endpoints (high-signal)
+### Seeded logins (after `seed.py`)
 
-- **Auth**
-  - `POST /api/v1/auth/register/` (merchant register)
-  - `POST /api/v1/auth/login/` (JWT pair)
-  - `GET /api/v1/auth/me/`
-- **KYC**
-  - `GET /api/v1/submissions/` (merchant: own, admin: all)
-  - `POST /api/v1/submissions/` (create draft)
-  - `PATCH /api/v1/submissions/:id/` (merchant edit in draft / more_info_requested)
-  - `POST /api/v1/submissions/:id/upload_document/` (file validation: pdf/jpg/png ≤ 5MB)
-  - `POST /api/v1/submissions/:id/submit/`
-  - `POST /api/v1/submissions/:id/review/` (admin actions: start_review/hold/request_info/approve/reject)
-- **Admin**
-  - `GET /api/v1/admin/stats/` (graphs)
-  - `GET /api/v1/admin/search/?q=...` (live search)
-  - `GET /api/v1/admin/users/` (user management)
-- **Notifications**
-  - `GET /api/v1/notifications/`
-  - `POST /api/v1/notifications/:id/read/`
+- **Reviewer**: `reviewer / reviewer123`
+- **Admin**: `admin / admin123`
+- **Merchant (draft)**: `merchant_draft / merchant123`
+- **Merchant (under_review)**: `merchant_review / merchant123`
 
-## State Machine
+## Core API endpoints (high-signal)
 
-Backend rules live in `backend/backend/kyc/state_machine.py`. Illegal transitions return 400.
+### Auth
+- `POST /api/v1/auth/register/` (merchant register)
+- `POST /api/v1/auth/login/` (JWT pair: access/refresh)
+- `POST /api/v1/auth/refresh/`
+- `GET /api/v1/auth/me/`
+
+### KYC
+- `GET /api/v1/submissions/` (merchant: own, admin: all)
+- `POST /api/v1/submissions/` (create draft)
+- `PATCH /api/v1/submissions/:id/` (merchant edit only in draft / more_info_requested)
+- `POST /api/v1/submissions/:id/upload_document/` (PDF/JPG/PNG ≤ 5MB)
+- `POST /api/v1/submissions/:id/submit/`
+- `POST /api/v1/submissions/:id/review/` (admin actions: start_review/hold/request_info/approve/reject)
+
+### Admin
+- `GET /api/v1/admin/stats/` (graphs data)
+- `GET /api/v1/admin/search/?q=...` (live search)
+- `GET /api/v1/admin/users/` (user management)
+- `POST /api/v1/admin/users/` (admin create user)
+
+### Notifications
+- `GET /api/v1/notifications/`
+- `POST /api/v1/notifications/:id/read/`
+
+## State machine (Playto core)
+
+- **Location**: `backend/backend/kyc/state_machine.py`
+- **Rule**: Every status change checks `can_transition(from, to)`. If false → **400**.
+
+States used:
+- `draft → submitted → under_review → approved/rejected`
+- `under_review → more_info_requested → submitted`
+- `on_hold` supported for reviewer hold flow
+
+## File upload validation (Playto core)
+
+Backend enforces:
+- **Types**: PDF / JPG / PNG (server-side)
+- **Extensions**: `.pdf/.jpg/.jpeg/.png`
+- **Size**: max **5MB**
+
+Code:
+- `backend/backend/kyc/utils.py` + `backend/backend/kyc/serializers.py`
+
+## SLA tracking (Playto core)
+
+- SLA = **24 hours from first submit**
+- `is_at_risk` computed dynamically (not stored) in `KYCSubmission.is_at_risk`
+- Reviewer queue uses oldest-first ordering by `submitted_at`
+
+## Tests
+
+Run backend tests:
+
+```bash
+cd backend/backend
+python3 manage.py test
+```
+
+Includes at least **one meaningful test** for an illegal state transition.
+
+## Deployment (Render + Netlify)
+
+### Backend on Render
+
+- **Root directory**: `backend/backend`
+- **Build command**:
+
+```bash
+pip install -r ../requirements.txt && python manage.py migrate && python manage.py shell < seed.py
+```
+
+- **Start command**:
+
+```bash
+gunicorn backend.wsgi:application
+```
+
+Recommended env vars:
+- `DJANGO_DEBUG=0`
+- `DJANGO_SECRET_KEY=...`
+- `DJANGO_ALLOWED_HOSTS=.onrender.com`
+- `CORS_ALLOW_ALL_ORIGINS=0`
+- `CORS_ALLOWED_ORIGINS=https://YOUR-SITE.netlify.app`
+- `CSRF_TRUSTED_ORIGINS=https://YOUR-SITE.netlify.app`
+- Optional (allow Netlify previews): `CORS_ALLOWED_ORIGIN_REGEXES=^https://.*\\.netlify\\.app$`
+
+### Frontend on Netlify
+
+- **Base directory**: `frontend`
+- **Build command**: `npm run build`
+- **Publish directory**: `dist`
+- Env var:
+  - `VITE_API_URL=https://YOUR-RENDER-SERVICE.onrender.com/api/v1`
+
+SPA routing is handled by `frontend/netlify.toml` (redirect to `index.html`).
+
+## Troubleshooting (common)
+
+- **CORS blocked**: Ensure Render env `CORS_ALLOW_ALL_ORIGINS=0` and `CORS_ALLOWED_ORIGINS` contains your Netlify URL exactly (no trailing slash).
+- **Can’t login on prod**: Run seed on Render shell:
+
+```bash
+cd backend/backend && python manage.py shell < seed.py
+```
+
+- **Docs not opening**: On prod you’ll need a persistent disk or external storage; local dev serves media via Django debug.
 
